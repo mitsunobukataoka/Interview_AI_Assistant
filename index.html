@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>面談AIアシスト</title>
+  <link rel="icon" href="favicon.png">
 
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -11,7 +12,7 @@
       theme: {
         extend: {
           colors: { indigo: { 950: '#1e1b4b' } },
-          boxShadow: { 'soft': '0 2px 12px rgba(0,0,0,0.06)' },
+          boxShadow: { soft: '0 2px 12px rgba(0,0,0,0.06)' },
           keyframes: {
             ripple: {
               '0%': { boxShadow: '0 0 0 0 rgba(79,70,229,0.4)' },
@@ -44,9 +45,7 @@
 const POWER_AUTOMATE_URL = "https://default3d540d42b0fd4a55b84fb51a4a6da5.a3.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/8126094ed50d46aaaa2432966d2bb094/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=D75a0bzBp5bu_wnl4gkQWD12D21ahhGdFSH6OiJBDfQ";
 const RECOGNITION_LANG = "ja-JP";
 
-/* ------------------------------
-   Icons
------------------------------- */
+/* ---------------- Icons ---------------- */
 const Icon = ({name, className="w-5 h-5"}) => {
   const common = "fill-none stroke-current stroke-[1.6]";
   switch (name) {
@@ -68,7 +67,8 @@ const Icon = ({name, className="w-5 h-5"}) => {
     );
     case "file": return (
       <svg className={`${className} ${common}`} viewBox="0 0 24 24">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
       </svg>
     );
     case "copy": return (
@@ -79,8 +79,10 @@ const Icon = ({name, className="w-5 h-5"}) => {
     );
     case "trash": return (
       <svg className={`${className} ${common}`} viewBox="0 0 24 24">
-        <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>
+        <path d="M3 6h18"/>
+        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+        <path d="M10 11v6M14 11v6"/>
       </svg>
     );
   }
@@ -88,25 +90,23 @@ const Icon = ({name, className="w-5 h-5"}) => {
 
 const Toast = ({msg, onClose}) => (
   <div className="fixed top-4 right-4 z-50">
-    <div className="bg-slate-900 text-white px-4 py-2 rounded shadow-lg flex items-center gap-2 text-sm animate-in slide-in-from-top-4 duration-300">
+    <div className="bg-slate-900 text-white px-4 py-2 rounded shadow-lg flex items-center gap-2 text-sm">
       <span>{msg}</span>
       <button onClick={onClose} className="ml-2 hover:text-indigo-400">×</button>
     </div>
   </div>
 );
 
-/* ======================================================
-   MAIN APP
-====================================================== */
+/* ===================== APP ===================== */
 function App() {
   const [isRecording, setIsRecording] = React.useState(false);
   const [finalChunks, setFinalChunks] = React.useState([]);
   const [interim, setInterim] = React.useState("");
+  const [preInfo, setPreInfo] = React.useState("");
   const [suggestions, setSuggestions] = React.useState([]);
   const [minutes, setMinutes] = React.useState("");
   const [loadingAI, setLoadingAI] = React.useState(false);
   const [loadingMinutes, setLoadingMinutes] = React.useState(false);
-  const [errorMsg, setErrorMsg] = React.useState("");
   const [toastMsg, setToastMsg] = React.useState("");
 
   const transcriptRef = React.useRef(null);
@@ -146,63 +146,50 @@ function App() {
   }, []);
 
   async function startRecording() {
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true, audio: { echoCancellation: false }
-      });
-      if (stream.getAudioTracks().length === 0) {
-        stream.getTracks().forEach(t => t.stop());
-        alert("システムオーディオを共有してください。");
-        return;
-      }
-      streamRef.current = stream;
-      const r = ensureRecognition();
-      manualStopRef.current = false;
-      r.start();
-      setIsRecording(true);
-      stream.getVideoTracks()[0].onended = () => stopRecording();
-    } catch (err) { console.error(err); }
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    streamRef.current = stream;
+    manualStopRef.current = false;
+    ensureRecognition().start();
+    setIsRecording(true);
+    stream.getVideoTracks()[0].onended = stopRecording;
   }
 
   function stopRecording() {
     manualStopRef.current = true;
-    if (recognitionRef.current) try { recognitionRef.current.stop(); } catch {}
-    if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+    recognitionRef.current?.stop();
+    streamRef.current?.getTracks().forEach(t => t.stop());
     setIsRecording(false);
   }
 
-  const fullText = React.useMemo(() => (finalChunks.join(" ") + " " + interim).trim(), [finalChunks, interim]);
+  const fullText = (finalChunks.join(" ") + " " + interim).trim();
 
-  // AIリクエスト汎用関数
   async function callPowerAutomate(type) {
-    if (!fullText) { setToastMsg("文字起こしデータがありません"); return; }
-    
-    if (type === "suggest") setLoadingAI(true);
-    else setLoadingMinutes(true);
+    if (!fullText) { setToastMsg("文字起こしがありません"); return; }
+
+    type === "suggest" ? setLoadingAI(true) : setLoadingMinutes(true);
+
+    const body = {
+      timestamp: new Date().toISOString(),
+      transcript: fullText,
+      requestType: type,
+      preInfo: type === "suggest" ? preInfo : ""
+    };
 
     try {
       const res = await fetch(POWER_AUTOMATE_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          timestamp: new Date().toISOString(), 
-          transcript: fullText,
-          requestType: type // suggest または minutes
-        })
+        body: JSON.stringify(body)
       });
-      if (!res.ok) throw new Error();
       const text = await res.text();
-      
-      if (type === "suggest") {
-        setSuggestions(text.split(/\n+/).map(s => s.trim()).filter(Boolean));
-      } else {
-        setMinutes(text);
-      }
-    } catch (err) { 
-      setErrorMsg("送信失敗。Power Automateの設定を確認してください。"); 
-    } finally { 
-      setLoadingAI(false); 
-      setLoadingMinutes(false); 
+      type === "suggest"
+        ? setSuggestions(text.split(/\n+/).filter(Boolean))
+        : setMinutes(text);
+    } catch {
+      setToastMsg("Power Automate送信エラー");
+    } finally {
+      setLoadingAI(false);
+      setLoadingMinutes(false);
     }
   }
 
@@ -210,107 +197,75 @@ function App() {
     <div className="max-w-5xl mx-auto px-4 py-6 flex flex-col gap-6 min-h-screen">
       {toastMsg && <Toast msg={toastMsg} onClose={() => setToastMsg("")} />}
 
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b pb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-indigo-900 flex items-center gap-2">
-            <Icon name="mic" className="w-6 h-6" /> 面談AIアシスト
-          </h1>
-          <p className="text-xs text-slate-500 mt-1 uppercase tracking-wider font-semibold">System Audio Recognition Enabled</p>
-        </div>
-        
-        <div className="flex flex-wrap gap-2">
+      <header className="flex justify-between items-end border-b pb-4">
+        <h1 className="text-2xl font-bold text-indigo-900 flex gap-2">
+          <Icon name="mic" /> 面談AIアシスト
+        </h1>
+        <div className="flex gap-2">
           {!isRecording ? (
-            <button onClick={startRecording} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-all">
-              <Icon name="mic" className="w-4 h-4"/> 録音開始
+            <button onClick={startRecording} className="btn bg-indigo-600 text-white px-4 py-2 rounded">
+              録音開始
             </button>
           ) : (
-            <button onClick={stopRecording} className="relative inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-rose-600 text-white text-sm font-medium hover:bg-rose-700">
-              <span className="absolute -inset-1 rounded-lg animate-ripple"></span>
-              <Icon name="stop" className="w-4 h-4"/> 停止
+            <button onClick={stopRecording} className="btn bg-rose-600 text-white px-4 py-2 rounded">
+              停止
             </button>
           )}
-          <button onClick={() => callPowerAutomate("suggest")} disabled={loadingAI} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-100 text-indigo-700 text-sm font-medium hover:bg-indigo-200 disabled:opacity-50">
-            <Icon name="send" className="w-4 h-4"/> {loadingAI ? "思考中..." : "AI質問案"}
+          <button onClick={() => callPowerAutomate("suggest")} className="px-4 py-2 bg-indigo-100 rounded">
+            AI質問案
           </button>
-          <button onClick={() => callPowerAutomate("minutes")} disabled={loadingMinutes} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-100 text-emerald-700 text-sm font-medium hover:bg-emerald-200 disabled:opacity-50">
-            <Icon name="file" className="w-4 h-4"/> {loadingMinutes ? "作成中..." : "議事録作成"}
+          <button onClick={() => callPowerAutomate("minutes")} className="px-4 py-2 bg-emerald-100 rounded">
+            議事録作成
           </button>
-          <button onClick={() => {setFinalChunks([]); setInterim(""); setSuggestions([]); setMinutes("");}} className="p-2 text-slate-400 hover:text-rose-500 transition-colors">
-            <Icon name="trash" className="w-5 h-5" />
+          <button onClick={() => {
+            setFinalChunks([]); setInterim(""); setPreInfo("");
+            setSuggestions([]); setMinutes("");
+          }}>
+            <Icon name="trash" />
           </button>
         </div>
       </header>
 
-      <main className="flex flex-col gap-6 flex-1">
-        {/* 上段: AIからの返答案 */}
-        <section className="flex flex-col min-h-[200px]">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-indigo-500"></span> 質問案
-          </h2>
-          <div className="bg-white rounded-xl shadow-soft border border-slate-200 p-4 flex-1 overflow-y-auto thin-scrollbar">
-            {suggestions.length === 0 ? (
-              <p className="text-slate-400 text-sm italic h-full flex items-center justify-center">AIの提案がここに表示されます</p>
-            ) : (
-              <div className="grid grid-cols-1 gap-2">
-                {suggestions.map((s, i) => (
-                  <button key={i} onClick={() => { navigator.clipboard.writeText(s); setToastMsg("コピーしました"); }} 
-                    className="text-left p-3 rounded-lg border border-slate-50 bg-slate-50 hover:bg-indigo-50 transition-all flex justify-between items-center text-sm">
-                    <span>{s}</span>
-                    <Icon name="copy" className="w-3 h-3 text-slate-400" />
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
+      {/* 質問案 */}
+      <section>
+        <h2 className="font-bold text-sm mb-2">質問案</h2>
+        <div className="bg-white p-4 rounded shadow">
+          {suggestions.map((s, i) => <div key={i}>{s}</div>)}
+        </div>
+      </section>
 
-        {/* 中段: リアルタイム文字起こし */}
-        <section className="h-40 flex flex-col">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-slate-300'}`}></span>
-            文字起こし
-          </h2>
-          <div ref={transcriptRef} className="bg-slate-900 rounded-xl p-4 overflow-y-auto thin-scrollbar flex-1 font-mono text-xs leading-relaxed text-slate-400">
-            {finalChunks.length === 0 && !interim ? "待機中..." : (
-              <div>
-                {finalChunks.map((t, i) => <span key={i} className="inline mr-2">{t}</span>)}
-                {interim && <span className="text-indigo-400 border-b border-indigo-500">{interim}</span>}
-              </div>
-            )}
-          </div>
-        </section>
+      {/* 事前情報 */}
+      <section>
+        <h2 className="font-bold text-sm mb-2">事前情報</h2>
+        <textarea
+          value={preInfo}
+          onChange={e => setPreInfo(e.target.value)}
+          className="w-full h-24 border rounded p-2"
+          placeholder="面談の目的・相手の立場・事前に知っている情報など"
+        />
+      </section>
 
-        {/* 下段: 議事録エリア */}
-        <section className="flex flex-col min-h-[250px] mb-8">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-emerald-600 flex items-center gap-2">
-              <Icon name="file" className="w-4 h-4" /> 議事録
-            </h2>
-            {minutes && (
-              <button onClick={() => { navigator.clipboard.writeText(minutes); setToastMsg("議事録をコピーしました"); }} className="text-xs text-emerald-700 font-medium hover:underline">
-                すべてコピー
-              </button>
-            )}
-          </div>
-          <div className="bg-emerald-50/50 rounded-xl border-2 border-dashed border-emerald-200 p-5 flex-1 overflow-y-auto thin-scrollbar">
-            {!minutes ? (
-              <div className="h-full flex flex-col items-center justify-center text-emerald-400/60 space-y-2">
-                <p className="text-sm">「議事録作成」ボタンを押すと、AIが要約を開始します</p>
-              </div>
-            ) : (
-              <div className="text-slate-700 text-sm whitespace-pre-wrap leading-loose minutes-content">
-                {minutes}
-              </div>
-            )}
-          </div>
-        </section>
-      </main>
+      {/* 文字起こし */}
+      <section>
+        <h2 className="font-bold text-sm mb-2">文字起こし</h2>
+        <div ref={transcriptRef} className="bg-slate-900 text-slate-300 p-4 rounded h-40 overflow-y-auto">
+          {fullText || "待機中..."}
+        </div>
+      </section>
+
+      {/* 議事録 */}
+      <section>
+        <h2 className="font-bold text-sm mb-2">議事録</h2>
+        <div className="bg-emerald-50 p-4 rounded min-h-[150px] whitespace-pre-wrap">
+          {minutes || "未作成"}
+        </div>
+      </section>
     </div>
   );
 }
 
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<App />);
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+
 </script>
 </body>
 </html>
